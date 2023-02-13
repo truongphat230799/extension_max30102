@@ -16,9 +16,9 @@
 
 from machine import SoftI2C
 from ustruct import unpack
-from utime import sleep_ms, ticks_diff, ticks_ms
+from utime import sleep_ms, ticks_diff, ticks_ms, ticks_us
 
-from max30102.circular_buffer import CircularBuffer
+from circular_buffer import CircularBuffer
 
 # I2C address (7-bit address)
 MAX3010X_I2C_ADDRESS = 0x57  # Right-shift of 0xAE, 0xAF
@@ -154,7 +154,7 @@ MAX_30105_EXPECTED_PART_ID = 0x15
 
 # Size of the queued readings
 STORAGE_QUEUE_SIZE = 4
-
+beats = 0
 
 # Data structure to hold the last readings
 class SensorData:
@@ -208,6 +208,11 @@ class MAX30102(object):
 
         # Set the Pulse Width to the default value of 411
         self.set_pulse_width(pulse_width)
+        self.MAX_HISTORY = 32
+        self.history = []
+        self.beats_history = []        
+        self.beat = False
+
 
         # Set the LED brightness to the default value of 'low'
         self.set_pulse_amplitude_red(led_power)
@@ -619,25 +624,14 @@ class MAX30102(object):
     # Pops the next red value in storage (if available)
     def pop_red_from_storage(self):
         if len(self.sense.red) == 0:
-            return 0
+            return 1
         else:
             return self.sense.red.pop()
-
-    def calculate_heartbeat(self):
-        if self.pop_red_from_storage == 0:
-            return 0
-        else:
-            return (60*1000/(3*self.pop_ir_from_storage + 2*self.pop_red_from_storage))
-    def calculate_spo2(self):
-        if self.pop_red_from_storage == 0:
-            return 0
-        else:
-            return ((-45.060*self.pop_red_from_storage*self.pop_red_from_storage)+(30.354*self.pop_red_from_storage)+25.6)
 
     # Pops the next IR value in storage (if available)
     def pop_ir_from_storage(self):
         if len(self.sense.IR) == 0:
-            return 0
+            return 1
         else:
             return self.sense.IR.pop()
 
@@ -708,3 +702,64 @@ class MAX30102(object):
                 # new data found
                 return True
             sleep_ms(1)
+    
+    def calculate_bpm(self):
+        t_start = ticks_us()
+        while True:
+            self.check()
+
+        # Check if the storage contains available samples
+            if self.available():
+                red_reading = self.pop_red_from_storage()
+                value = red_reading
+                self.history.append(value)
+                # Get the tail, up to MAX_HISTORY length
+                history = self.history[-self.MAX_HISTORY:]
+                minima = 0
+                maxima = 0
+                threshold_on = 0
+                threshold_off = 0
+
+                minima, maxima = min(history), max(history)
+
+                threshold_on = (minima + maxima * 3) // 4   # 3/4
+                threshold_off = (minima + maxima) // 2      # 1/2
+                
+                if value > 1000:
+                    if not self.beat and value > threshold_on:
+                        self.beat = True                    
+                        t_us = ticks_diff(ticks_us(), t_start)
+                        t_s = t_us/1000000
+                        f = 1/t_s
+                        bpm = f * 60
+                        if bpm < 500:
+                            t_start = ticks_us()
+                            self.beats_history.append(bpm)                    
+                            beats_history = self.beats_history[-self.MAX_HISTORY:]
+                            beats = round(sum(beats_history)/len(beats_history) ,2)
+                            print(beats)
+                    if self.beat and value< threshold_off:
+                        self.beat = False
+                    
+                else:
+                    print('Not finger')
+                    
+                return beats
+    
+    def calculate_spo2(self):
+        self.check()
+
+    # Check if the storage contains available samples
+        if self.available():
+            # Access the storage FIFO and gather the readings (integers)
+            red_reading = self.pop_red_from_storage()
+            ir_reading = self.pop_ir_from_storage()
+            #spo2 = 100*(red_reading/ir_reading)/(red_reading/ir_reading+1.4*(1-red_reading/ir_reading))
+            
+            z =  ir_reading/red_reading
+            saturation = 115 - 25*z
+            print("O2: {}%".format(round(saturation,1)))
+            
+    def display_bpm(self):
+        global beats        
+        print('BPM: ', beats)
