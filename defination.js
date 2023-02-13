@@ -21,7 +21,7 @@ Blockly.Blocks['max30102_infor'] = {
               }
             ],
             "output": null,
-            "colour": 0,
+            "colour": 220,
             "tooltip": "",
             "helpUrl": ""
         }
