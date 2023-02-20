@@ -10,12 +10,12 @@ Blockly.Blocks['max30102_infor'] = {
                 "name": "action",
                 "options": [
                   [
-                    "nhịp tim(BPM)",
-                    "bmp"
+                    "nhịp tim (BPM)",
+                    "calculate_bpm()"
                   ],
                   [
-                    "oxy trong máu(SPO2)",
-                    "spo2"
+                    "oxy trong máu (SPO2)",
+                    "calculate_spo2()"
                   ]
                 ]
               }
@@ -30,9 +30,13 @@ Blockly.Blocks['max30102_infor'] = {
 };
 
 Blockly.Python['max30102_infor'] = function(block) {
+  Blockly.Python.definitions_['import_yolobit'] = 'from yolobit import *';
+  Blockly.Python.definitions_['import_machine'] = 'from machine import sleep, SoftI2C, Pin, Timer ';
+  Blockly.Python.definitions_['import_utime'] = 'from utime import ticks_diff, ticks_us,ticks_ms';
+  Blockly.Python.definitions_['import_max30102'] = 'i2c = SoftI2C(sda=Pin(21),scl=Pin(22),freq=400000)'+ 'sensor = MAX30102(i2c=i2c)' + 'sensor.setup_sensor()';
     var dropdown_action = block.getFieldValue('action');
     // TODO: Assemble Python into code variable.
-    var code = '...';
+    var code = 'sensor.'+ dropdown_action;
     // TODO: Change ORDER_NONE to the correct strength.
     return [code, Blockly.Python.ORDER_NONE];
   };

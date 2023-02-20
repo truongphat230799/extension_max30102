@@ -17,6 +17,7 @@
 from machine import SoftI2C
 from ustruct import unpack
 from utime import sleep_ms, ticks_diff, ticks_ms, ticks_us
+import time
 
 from circular_buffer import CircularBuffer
 
@@ -154,8 +155,14 @@ MAX_30105_EXPECTED_PART_ID = 0x15
 
 # Size of the queued readings
 STORAGE_QUEUE_SIZE = 4
-beats = 0
+#beats = 0
 
+
+MAX_HISTORY = 32
+history = []
+beats_history = []
+beat = False
+beats = 0
 # Data structure to hold the last readings
 class SensorData:
     def __init__(self):
@@ -703,18 +710,29 @@ class MAX30102(object):
                 return True
             sleep_ms(1)
     
-    def calculate_bpm(self):
+    def calculate_bpm(self, timeout = 6000):
+        MAX_HISTORY = 32
+        history = []
+        beats_history = []
+        beat = False
+        beats = 0
         t_start = ticks_us()
-        while True:
+        #print(sensor.calculate_bpm())
+        # The check() method has to be continuously polled, to check if
+        # there are new readings into the sensor's FIFO queue. When new
+        # readings are available, this function will put them into the storage.
+        last_time = ticks_ms()
+        while ticks_ms() - last_time < timeout:
             self.check()
-
-        # Check if the storage contains available samples
             if self.available():
+                # Access the storage FIFO and gather the readings (integers)
                 red_reading = self.pop_red_from_storage()
+                ir_reading = self.pop_ir_from_storage()
+                
                 value = red_reading
-                self.history.append(value)
+                history.append(value)
                 # Get the tail, up to MAX_HISTORY length
-                history = self.history[-self.MAX_HISTORY:]
+                history = history[-MAX_HISTORY:]
                 minima = 0
                 maxima = 0
                 threshold_on = 0
@@ -726,26 +744,32 @@ class MAX30102(object):
                 threshold_off = (minima + maxima) // 2      # 1/2
                 
                 if value > 1000:
-                    if not self.beat and value > threshold_on:
-                        self.beat = True                    
+                    if not beat and value > threshold_on:
+                        beat = True
                         t_us = ticks_diff(ticks_us(), t_start)
                         t_s = t_us/1000000
                         f = 1/t_s
                         bpm = f * 60
                         if bpm < 500:
                             t_start = ticks_us()
-                            self.beats_history.append(bpm)                    
-                            beats_history = self.beats_history[-self.MAX_HISTORY:]
-                            beats = round(sum(beats_history)/len(beats_history) ,2)
-                            print(beats)
-                    if self.beat and value< threshold_off:
-                        self.beat = False
+                            beats_history.append(bpm)                    
+                            beats_history = beats_history[-MAX_HISTORY:] 
+                            beats = round(sum(beats_history)/len(beats_history) ,2)                    
+                    if beat and value< threshold_off:
+                        beat = False
+                    if beats >= 68 and beats <= 150 :
+                        print('BPM: ',beats)
+                    else:
+                        print('calculating...')
+                    
                     
                 else:
                     print('Not finger')
-                    
-                return beats
-    
+                
+        sleep_ms(1000)
+                
+
+
     def calculate_spo2(self):
         self.check()
 
@@ -758,8 +782,6 @@ class MAX30102(object):
             
             z =  ir_reading/red_reading
             saturation = 115 - 25*z
-            print("O2: {}%".format(round(saturation,1)))
+            print("{}%".format(round(saturation,1)))
+            sleep_ms(1000)
             
-    def display_bpm(self):
-        global beats        
-        print('BPM: ', beats)
